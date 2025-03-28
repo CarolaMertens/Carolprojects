@@ -1,0 +1,308 @@
+---
+title: "divvy_trips_2019q1_2020q2"
+author: "Maria Carolina Mertens"
+date: "2024-08-23"
+output:
+  html_document: default
+  github_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Background
+
+There were 2 csv files downloaded from the case study document containing datasets on the first quarters of 2019 and 2020 which were made available by Motivate International Inc., a primary source under a license issued by the City of Chicago. No riders’ identifiable information was disclosed to secure data privacy.
+
+The 2019 dataset originally had 12 columns and 365,070 rows while the 2020 had 13 columns and 426,888 rows.
+
+To avoid frequent crashes during the cleaning, analysis and visualization processes in Rstudio, I initially cleaned the datasets in Excel to reduce the big amount of data to be imported in R.
+
+I have chosen Excel because it is the easiest platform for me to clean data and the data sets are not beyond the limit. I have also chosen R because of its convenience in importing, analysis and visualization of data.
+
+First, I ensured that there were no duplicates. The missing data were all addressed later after deleting unworkable columns, details of which are found below. I also checked for possible biases and saw none.
+
+The following columns were deleted:
+
+from 2019: gender and birthyear columns because they were excluded by the company in 2020
+from 2020: start_lat, start_long, end_lat and end_long columns because they were new additions and did not exist in 2019
+from 2020: all "HQ QR"" or <0 values from start_station_name column because they were already removed by the company.
+from both: bikeid and rideable_type because of bikeid’s unidentifiable values inconsistent with the other, thus rendering them unworkable together
+from both: from_station_id, to_station_id, start_station_id, end_station_id to reduce amount of data since I wouldn’t be working on them
+
+Further data cleaning:
+
+After importing the datasets in Rstudio, the following cleaning processes were performed to make all columns from both datasets consistent before merging them together: renaming columns, reformatting columns and replacing value names.
+
+Assumption:
+
+I assumed that there was no customer segregation other than members and casual riders.
+
+### Load packages in R.
+
+First is setting up and loading the necessary packages to help run the codes smoothly.
+
+```{r set up, include=FALSE}
+install.packages("tidyverse")
+library(tidyverse)
+install.packages("ggthemes")
+library(ggthemes)
+library(scales)
+library(knitr)
+library(rmarkdown)
+library(conflicted)
+conflict_prefer("filter","dplyr")
+conflict_prefer("lag","dplyr")
+```
+
+### Import data
+
+The external csv files should be imported in R for further cleaning, analysis and plotting. I used read_csv() here for importing and saving the files and called them q1_2019 and q1_2020 dataframes. 
+
+```{r import data}
+q1_2019 <- read_csv("divvy_2019.csv")
+q1_2020 <- read_csv("divvy_2020.csv")
+```
+
+### Preview data
+
+I used glimpse() to check out the column names and the data types of the values.
+
+```{r preview data}
+glimpse(q1_2019)
+glimpse(q1_2020)
+```
+
+###Clean the data
+
+The 2 datasets should be cleaned and similarly formatted so they would be compatible during the merging process. 
+
+####Rename columns
+The column names of the 2 datasets are different from one another so I used rename() to make them consistent by changing the column names of q1_2019 and retaining those of q1_2020. 
+
+```{r rename columns, error=FALSE}
+(q1_2019<-rename(q1_2019, 
+    ride_id=trip_id,
+    started_at=start_time,
+    ended_at=end_time,
+    start_station_name=from_station_name,
+    end_station_name=to_station_name,
+    member_casual=usertype))
+```
+
+####Convert data type
+
+The data type of the ride_id column in q1_2019 is in numeric format while in q1_2020 is in character format. I used mutate() and as.character() to make the said format consistent with q1_2020. 
+```{r convert data type}
+q1_2019<-mutate(q1_2019, 
+    ride_id=as.character(ride_id))
+```
+
+###Merge dataframes
+
+Merge the 2 dataframes into one using bind_rows() to compare datasets and analyze relationships and trends 
+```{r merge dataframes}
+q1_trips<-bind_rows(q1_2019,q1_2020)
+```
+
+###Inspect statistical summary 
+
+Check out the statistical summary of the numeric data of the first quarters of 2019 and 2020 combined: median, mean, mode and max using summary().
+```{r inspect statistical summary}
+summary(q1_trips)
+```
+
+###Replace value names for consistency
+The value names used by q1_2019 and q1_2020 for the member-casual column are different despite similarity in levels: "Subscriber" and "Customer" for q1_2019, while "member" and "casual" for q1_2020. To make values consistent across column I changed q1_2019 values by using recode() to preserve the existing order of levels while retaining q1_2020 values. 
+
+```{r replace value names}
+q1_trips<-q1_trips %>% 
+  mutate(member_casual=recode(member_casual,
+  "Subscriber"="member",
+  "Customer"="casual"))
+```
+
+###Calculate trips
+From the "started_at" and "ended_at" we can calculate the duration of each ride in seconds by using difftime() to be able to find the difference between these columns then returning the difference into a new column called "ride_duration". 
+
+The ride_duration column is in character format and if I want to use it later for more calculations then I have to convert it into numeric format by using as.numeric().
+
+```{r }
+q1_trips$ride_duration <- difftime(q1_trips$ended_at,
+  q1_trips$started_at)
+q1_trips$ride_duration <- as.numeric(as.character(
+  q1_trips$ride_duration))
+```
+
+###Create date columns
+The dataframe has "started_at column" showing the date and time of each ride. We can use this column to get the date's year, month and day and make separate columns for each and make further analysis using them. 
+
+First I used as.Date() to take only the date information from the said column and assigned it to a new column named "date". Then I used format() with the corresponding symbol for year(%Y), month(%b) and day(%d) and returned each in new columns. Finally, in order to determine which day of the month the ride was taken, I used again format() to convert the date into the name of the day in abbreviated word like "Tue" and made a new column for it. 
+
+```{r create date columns}
+q1_trips$date<-as.Date(q1_trips$started_at)
+q1_trips$month<-format(as.Date(q1_trips$date), "%b")
+q1_trips$day<-format(as.Date(q1_trips$date), "%d")
+q1_trips$year<-format(as.Date(q1_trips$date), "%Y")
+q1_trips$week_day<-format(as.Date(q1_trips$date), "%a")
+```
+
+###Show combined ride information
+Let us see the number of rides and average ride durations for each ridertype during the combined first quarters of 2019 and 2020. 
+
+We can see in the table the big difference between the number of rides and the average ride duration between members and casuals. Members have a huge number of rides compared to the casuals while casuals have very a high number in average ride duration compared to the other.  
+
+```{r show combined ride information}
+q1_trips %>% group_by(member_casual) %>% 
+  summarise(number_of_rides= n(), 
+  average_duration=mean(ride_duration)) %>% 
+  arrange(member_casual)
+```
+
+###Descriptive analysis on ride durations
+Now let us examine the mean, median, max and min of "ride_duration" from the combined first quarters of 2019 and 2020.
+
+```{r descriptive analysis on ride_durations }
+q1_trips %>% group_by(member_casual) %>% 
+  summarise(average_duration=mean(ride_duration), 
+  median_duration=median(ride_duration),
+  max_duration=max(ride_duration),
+  min_duration=min(ride_duration)) %>% 
+  arrange(member_casual)
+```
+
+###Plot the number of rides against days of the week
+To see how many riders were there each day of the week during the period, I plotted them using mutate() and factor() to arrange the days in chronological order, since by default they are arranged alphabetically. I also used scale_y_continuous() to avoid returning exponential numbers in the y-axis.
+
+```{r plot number of rides against days of the week}
+q1_trips %>% mutate(week_day = factor(week_day, 
+  levels = c("Sun","Mon","Tue","Wed","Thu","Fri", "Sat"))) %>% 
+  group_by(member_casual, week_day) %>% 
+  summarise(number_of_rides=n()) %>% 
+  ggplot(aes(x=week_day, y=number_of_rides, fill=member_casual))+ 
+  scale_y_continuous(labels = comma) + 
+  geom_col(alpha=0.8, position = "dodge") +
+  labs (x="Days of the Week", y= "Number of Rides", 
+        title = "Number of Rides vs. Days of the Week", 
+        subtitle = "For First Quarters of 2019 and 2020",
+        caption = "Data made available by Motivate International Inc.")
+```
+###Plot top 10 ride stations
+Now let us see the top stations with the most number of rides during the combined quarters. These are the stations where riders usually start their trips maybe because they live or work around here, or they pick up the bikes here, or maybe there are train stations nearby. 
+
+I used tail() to get the highest number of rides and fct_reorder() to arrange the start_station_names chronologically in descending order.
+
+```{r plot top 10 ride stations, echo=FALSE}
+q1_trips %>% group_by(start_station_name, member_casual) %>% 
+  summarise(number_of_rides=n()) %>% 
+  arrange(number_of_rides) %>% tail(10) %>% 
+  ggplot(aes(fct_reorder(start_station_name, -number_of_rides), 
+  y=number_of_rides)) + geom_line(color="blue", 
+  size=0.5, group=1)+ geom_point()+
+  theme(axis.text.x = element_text(angle = 45)) +
+  labs (x="Start Station Names", y= "Number of Rides", 
+  title = "Top 10 Start Station Names vs. Number of Rides", 
+  subtitle = "For First Quarters of 2019 and 2020",
+  caption = "Data made available by Motivate International Inc.")
+```
+
+###Ride information by year
+```{r ride information by year}
+yearly_trips<- q1_trips %>% 
+  group_by(member_casual, year) %>% 
+  mutate(number_of_rides = n(), 
+  average_ride_duration = mean (ride_duration)) %>% 
+  select(member_casual, year, average_ride_duration, 
+  number_of_rides)
+```
+
+###Compare average duration of rides per year
+Let us compare the average ride durations of members against casuals in the Q1 of 2019 and 2020.
+
+The chart shows a big increase of casual riders' average ride duration from 2019 to 2020, while member riders decreased slightly.
+
+```{r compare average duration of rides per year}
+yearly_trips %>%  
+  group_by(member_casual) %>% 
+  mutate(ROC_average_ride_duration = 100* (
+  average_ride_duration - lag(average_ride_duration))/lag(average_ride_duration)) %>% 
+  select(member_casual, year, average_ride_duration, ROC_average_ride_duration) %>%  
+  ggplot(aes(x= year, y=average_ride_duration, 
+  fill = member_casual)) + geom_col(alpha=0.8) + 
+  labs(x="First Quarter of Year_", 
+  y="Average Duration in Seconds",
+  title="Average Ride Duration per Ridertype vs. Year", 
+  subtitle = "for First Quarters of 2019 and 2020",
+  caption = "Data made available by Motivate International Inc.")
+```
+###Compare the number of rides per year
+Let us compare the number of rides of members against casuals in the Q1 of 2019 and 2020.
+
+The chart shows a slight increase in the number of rides of both riders from 2019 to 2020.
+
+```{r compare the number of rides per year}
+yearly_trips %>%  
+  group_by(member_casual) %>% 
+  mutate(ROC_number_of_rides= 100* (
+    number_of_rides- lag(number_of_rides))/lag(number_of_rides))%>% 
+  select(member_casual, year, number_of_rides, ROC_number_of_rides) %>%  
+  ggplot(aes(x= year, y=number_of_rides, 
+  fill = member_casual)) + geom_col(alpha=0.8) + 
+  scale_y_continuous(labels = comma)+
+  labs(x="First Quarter of Year_", 
+       y="Number of Rides",
+       title="Number of Rides per Ridertype vs. Year", 
+       subtitle = "for First Quarters of 2019 and 2020",
+       caption = "Data made available by Motivate International Inc.")
+```
+###Ride information by month
+```{r ride information by month}
+monthly_trips<- q1_trips %>% 
+  mutate(month = factor(month, levels = c("Jan","Feb","Mar"))) %>% 
+  group_by(member_casual, year, month) %>% 
+  summarise(number_of_rides = n(), 
+  average_monthly_duration = mean (ride_duration)) %>% 
+  mutate(ROC_monthly_ride_number = 100* (
+  number_of_rides-lag(number_of_rides))/lag(number_of_rides)) %>% 
+  select(member_casual, year, month, average_monthly_duration, 
+  number_of_rides, ROC_monthly_ride_number)
+```
+
+###Monthly rate of change on number of rides
+Now let us calculate the rate of change of the number of rides every month. I used lag() to calculate the rate of change (ROC) of riders.
+
+```{r monthly rate of change of number on rides}
+monthly_trips %>%  
+  group_by(member_casual, year) %>% 
+  mutate(ROC_monthly_ride_number = 100* (
+  number_of_rides-lag(number_of_rides))/lag(number_of_rides)) %>% 
+  select(member_casual,year,month, 
+  number_of_rides, ROC_monthly_ride_number)
+```
+###Plot the rate of change on number of rides
+The first months are not shown in the chart since they are the first point of reference for the rate of change (ROC). 
+
+The chart shows that casuals from January to March 2019 had percentage  of change of -42.7 then jumped to 503.6 and in 2020 from 58.2 up to 99.9. Members had percentage of change in the first 3 months of 2019 of -5.2 then up to 6 and in 2020 from -6.9 down to -8.8.
+
+```{r warning=FALSE}
+monthly_trips %>% 
+  mutate(month = factor(month, levels = c("Jan","Feb","Mar"))) %>% 
+  select(member_casual, year, month, number_of_rides, 
+  ROC_monthly_ride_number) %>% 
+  ggplot() + 
+  geom_col(aes(x= month, y=ROC_monthly_ride_number, 
+  fill=ROC_monthly_ride_number>0), alpha=0.8)+ 
+  facet_wrap(member_casual~year)+
+  scale_fill_manual(values = c("maroon","pink"))+
+  geom_line(aes(x= month, y= ROC_monthly_ride_number, group=1)) + 
+  geom_point(aes(x= month, y=ROC_monthly_ride_number))+
+  geom_text(aes(x=month, y= ROC_monthly_ride_number, 
+  label = round(ROC_monthly_ride_number,1), vjust=-0.3)) +
+  labs(x="Q1 Months", y="Number of Rides", 
+  title="Rate of Change of  Number of Rides vs. Month", 
+  subtitle = "for First Quarters of 2019 and 2020",
+  caption = "Data made available by Motivate International Inc.") 
+```
+
+
